@@ -62,30 +62,7 @@ struct point {
     GLfloat t;
 };
 
-// TODO: put this in an atlas
-struct FreeTypeGlyphCharInfo {
-    // advance X and Y for screen coordinate calculations
-    float ax;
-    float ay;
 
-    // bitmap left and top for screen coordinate calculations
-    float bl;
-    float bt;
-
-    // glyph bitmap width and height for screen coordinate calculations
-    float bw;
-    float bh;
-    
-    // glyph bitmap width and height normalized to [0.0,1.0] for texture coordinate calculations
-    // Note: It is better for performance to do the normalization (a division) at startup.
-    float nbw;  
-    float nbh;
-
-
-                // TODO: change to "texture S" and "texture T" to be clear
-    float tx;	// x offset of glyph in texture coordinates (S on range [0.0,1.0])
-    float ty;	// y offset of glyph in texture coordinates (T on range [0.0,1.0])
-} gGlyphCharInfo[128];   // the FreeType glyph set provides the basic printable ASCII character set, and even though the first 31 are not visible and will therefore not be loaded, the useless bytes are an acceptbale tradeoff for rapid ASCII character lookup
 
 
 
@@ -97,11 +74,8 @@ FT_Library gFtLib;  // move to a "FreeTypeContainment" class
 FT_Face gFtFace;    // move to a "FreeTypeContainment" class
 GLuint gProgramId;
 GLint gUniformTextSamplerLoc;   // uniform location within program
-GLint gTextureSamplerId;        // which sampler to use (0 - GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS (??you sure??)
 GLint gUniformTextColorLoc;     // uniform location within program
 
-// move to an "atlas" class
-GLuint gFreeTypeAtlasTextureId; // have to reference it on every draw call, so keep it around
 
 /*-----------------------------------------------------------------------------------------------
 Description:
@@ -258,226 +232,327 @@ GLuint CreateProgram()
     return programId;
 }
 
-//// TODO: header
-//void RenderText(const char loadThisChar, const float x, const float y, const float userScaleX,
-//    const float userScaleY)
-//{
-//    glEnable(GL_BLEND);
-//    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-//
-//    // create a texture (a 2D texture, that is; no 3D here) that will be used to hold 1 glyph
-//    GLuint textureId;
-//    glGenTextures(1, &textureId);
-//    glBindTexture(GL_TEXTURE_2D, textureId);
-//
-//    // tell the frag shader which texture sampler to use (??I think that there are 15 with 0 enabled by default??)
-//    glActiveTexture(GL_TEXTURE0);   // ??necessary? texture 0 is active by default, but using another doesn't seem to affect it??
-//    glUniform1i(gUniformTextTextureLoc, 0);
-//
-//    //??the heck is this??
-//    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-//
-//    // texture configuration setup (I don't understand most of these)
-//    // - clamp both S and T (texture's X and Y; they have their own axis names) to edges so that any texture coordinates that are provided to OpenGL won't be allowed beyond the [-1, +1] range that texture coordinates are restricted to
-//    // - linear filtering when the texture needs to be magnified or (I cringe at the term) "minified" based on scaling
-//    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-//    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-//    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-//    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-//
-//    // save some dereferencing
-//    FT_GlyphSlot glyph = gFtFace->glyph;
-//
-//    // copy the glyph's pixel values from the face (the face is a 2D array of alpha values) into 
-//    // the texture
-//    // Note: The function returns an FT_Error...thing (I can't find the definition).  I don't 
-//    // know what it is, but I do know that returning anything other than 0/false is a problem, so
-//    // if it doesn't equate to false, we're good.
-//    if (FT_Load_Char(gFtFace, loadThisChar, FT_LOAD_RENDER))
-//    {
-//        // returned an error, so jump to the end of the function and clean up before returning
-//    }
-//    else
-//    {
-//        // the face->glyph loading went fine, so the face's glyph now has data on where in the 
-//        // face the character's alpha values are located (it's a little rectangle somewhere in 
-//        // the face's large 2D plain), and the glyph can now be loaded into the texture
-//        // Note: This is both a texture initialization (telling it how big it needs to be) and
-//        // loading.
-//
-//        // some kind of detail thing; leave at default of 0
-//        GLint level = 0;
-//
-//        // tell OpenGL that it should store the data as alpha values (no RGB)
-//        // Note: That is, it should store [alpha, alpha, alpha, etc.].  If GL_RGBA (red, green, 
-//        // blue, and alpha) were stated instead, then OpenGL would store the data as 
-//        // [red, green, blue, alpha, red, green, blue, alpha, red, green, blue, alpha, etc.].
-//        GLint internalFormat = GL_ALPHA;
-//
-//        // tell OpenGL that the data is being provided as alpha values
-//        // Note: Similar to "internal format", but this is telling OpenGL how the data is being
-//        // provided.  It is possible that many different image file formats store their RGBA 
-//        // in many different formats, so "provided format" may differ from one file type to 
-//        // another while "internal format" remains the same in order to provide consistency 
-//        // after file loading.  In this case though, "internal format" and "provided format"
-//        // are the same.
-//        GLint providedFormat = GL_ALPHA;
-//
-//        // knowing the provided format is great and all, but OpenGL is getting the data in the 
-//        // form of a void pointer, so it needs to be told if the data is a singed byte, unsigned 
-//        // byte, unsigned integer, float, etc.
-//        // Note: The shader uses values on the range [0.0, 1.0] for color and alpha values, but
-//        // the FreeType face uses a single byte for each alpha value.  Why?  Because a single 
-//        // unsigned byte (8 bits) can specify 2^8 = 256 (0 - 255) different values.  This is 
-//        // good enough for what FreeType is trying to draw.  OpenGL compensates for the byte by
-//        // dividing it by 256 to get it on the range [0.0, 1.0].  
-//        // Also Note: Some file formats provide data as sets of floats, in which case this type
-//        // would be GL_FLOAT.
-//        GLenum providedFormatDataType = GL_UNSIGNED_BYTE;
-//
-//        // tell OpenGL how many "provided format" values are in a single row
-//        // Note: Textures (1D (a single row), 2D, and 3D) are all stored in arrays.  These are 
-//        // linear, even 2D and 3D arrays, which are one instance of the sub-array followed by
-//        // another.  FreeType text glyphs use 2D textures.  This means that they use a "width"
-//        // and "height" concept in which the units are specified in "provided format".  In this
-//        // case, the glyphs "bitmap width" says how many alpha values are in a single row of this
-//        // 2D texture. 
-//        GLsizei textureWidth = glyph->bitmap.width;
-//
-//        // tell OpenGL how many rows of "provided format" items exist
-//        GLsizei textureHeight = glyph->bitmap.rows;
-//
-//        // no border (??units? how does this work? play with it??)
-//        GLint border = 0;
-//
-//        // set texture data
-//        glTexImage2D(GL_TEXTURE_2D, level, internalFormat, textureWidth, textureHeight, border,
-//            providedFormat, providedFormatDataType, glyph->bitmap.buffer);
-//
-//        // so now a texture is loaded, but where to draw it?
-//
-//        // X screen coordinates are on the range [-1,+1]
-//        float oneOverScreenPixelWidth = 2.0f / glutGet(GLUT_WINDOW_WIDTH);
-//
-//        // Y screen coordinates are, like X, on the range [-1,+1]
-//        float oneOverScreenPixelHeight = 2.0f / glutGet(GLUT_WINDOW_HEIGHT);
-//
-//        // this needs some explanation (I do, at least)
-//        // Note: A glyph in the land of fonts formally has an origin, which is a standardized 
-//        //  lower-left corner that font creators use as the start of the symbol.  The glyph 
-//        //  mostly goes to the right of it and up from it, but due to the quirks of the font 
-//        //  creator's drawing, the glyph can also go to the left of and below it.  In 
-//        //  console-style text like a bash terminal or a MS command prompt, most letters don't 
-//        //  to the left of the origin, but some characters like 'j', 'g', and 'y' have tails that 
-//        //  can go below it.  In the font used by this demo, "FreeSans.ttf", the letters 'k' and 
-//        //  'g' go just a few pixels to the left of the origin.  In fancier text, loops and 
-//        //  swirls and curves can frequently go to the left and below the origin.
-//        // Also Note: Bitmap standards use the top left of a rectangle as the origin, and 
-//        //  FreeType doesn't change this.  But the world of fonts still uses a math-style
-//        //  "origin is lower left" approach to drawing fonts.  Hooray for mixing standards.
-//        // Consequence: If I want to scale the text, I must multiply the left, top, width, and 
-//        //  height by the user-provided scaling factor.  Note that the "left" value is positive
-//        //  even though it is to the left of the origin (i.e., negative), so subtract this value
-//        //  from the user-provided X.
-//        // Ex: "bitmap left" specifies how many "provided format" items (three floats in RGB 
-//        // pattern, four floats in RGBA, etc.) are between the texture center and its left edge.
-//        float scaledGlyphLeft = glyph->bitmap_left * oneOverScreenPixelWidth * userScaleX;
-//        float scaledGlyphWidth = glyph->bitmap.width * oneOverScreenPixelWidth * userScaleX;
-//        float scaledGlyphTop = glyph->bitmap_top * oneOverScreenPixelHeight * userScaleY;
-//        float scaledGlyphHeight = glyph->bitmap.rows * oneOverScreenPixelHeight * userScaleY;
-//
-//        // could these be condensed into the "scaled glyph" calulations? yes, but this is clearer to me
-//        float screenCoordLeft = x - scaledGlyphLeft;
-//        float screenCoordRight = scaledGlyphLeft + scaledGlyphWidth;
-//        float screenCoordTop = y + scaledGlyphTop;
-//        float screenCoordBottom = scaledGlyphTop - scaledGlyphHeight;
-//
-//        // use the whole texture
-//        // Note: Textures use their own 2D coordinate system (S,T) to avoid confusion with screen coordinates (X,Y).
-//        float sLeft = 0.0f;
-//        float sRight = 1.0f;
-//        float tBottom = 0.0f;
-//        float tTop = 1.0f;
-//
-//        // OpenGL draws triangles, but a rectangle needs to be drawn, so specify the four corners
-//        // of the box in such a way that GL_LINE_STRIP will draw the two triangle halves of the 
-//        // box
-//        // Note: As long as the lines from point A to B to C to D don't cross each other (draw 
-//        // it on paper), this is fine.  I am going with the pattern 
-//        // bottom left -> bottom right -> top left -> top right.
-//        // Also Note: Bitmap standards (and most other rectangle standards in programming, such 
-//        // as for GUIs) understand the top left as the origin, and therefore the texture's pixels 
-//        // are provided in a rectangle that goes from top left to bottom right.  OpenGL is the 
-//        // odd one out in the world of rectangles, and it draws textures from lower left 
-//        // ([S=0,T=0]) to upper right ([S=1,T=1]).  This means that the texture, from OpenGL's 
-//        // perspective, is "upside down".  Yay for different standards.
-//        point box[4] = {
-//            { screenCoordLeft, screenCoordBottom, sLeft, tTop },
-//            { screenCoordRight, screenCoordBottom, sRight, tTop },
-//            { screenCoordLeft, screenCoordTop, sLeft, tBottom },
-//            { screenCoordRight, screenCoordTop, sRight, tBottom }
-//        };
-//
-//        // set up (??not create??) the vertex buffer that will hold screen coordinates and texture 
-//        // coordinates
-//        GLuint vboId;
-//        glGenBuffers(1, &vboId);
-//        glBindBuffer(GL_ARRAY_BUFFER, vboId);
-//        glBufferData(GL_ARRAY_BUFFER, sizeof(box), box, GL_DYNAMIC_DRAW);
-//
-//        // tell OpenGL how the "box" data above is organized
-//        // Note: This must be done AFTER binding the buffer or the program WILL crash.
-//
-//        // 2 floats per screen coord, 2 floats per texture coord, so 1 variable will do
-//        GLint itemsPerVertexAttrib = 2;
-//        
-//        // how many bytes to "jump" until the next instance of the attribute
-//        GLint bytesPerVertex = 4 * sizeof(float);  
-//        
-//        // this is cast as a pointer due to OpenGL legacy stuff
-//        GLint bufferStartByteOffset = 0;    
-//
-//        // shorthand for "vertex attribute index"
-//        GLint vai = 0;  
-//        
-//        // screen coordinates first
-//        // Note: 2 floats starting 0 bytes from set start.
-//        glEnableVertexAttribArray(vai);
-//        glVertexAttribPointer(vai, itemsPerVertexAttrib, GL_FLOAT, GL_FALSE, bytesPerVertex,
-//            (void *)bufferStartByteOffset);
-//
-//        // texture coordinates second
-//        // Note: My approach (a common one) is to use the same kind and number of items for each
-//        // vertex attribute, so this array's settings are nearly identical to the screen 
-//        // coordinate's, the only difference being an offset (screen coordinate bytes first, then
-//        // texture coordinate byte; see the box).
-//        vai++;
-//        bufferStartByteOffset += itemsPerVertexAttrib * sizeof(float);
-//        glEnableVertexAttribArray(vai);
-//        glVertexAttribPointer(vai, itemsPerVertexAttrib, GL_FLOAT, GL_FALSE, bytesPerVertex,
-//            (void *)bufferStartByteOffset);
-//
-//        // all that so that this one function call will work
-//        // Note: Start at vertex 0 (that is, start at element 0 in the GL_ARRAY_BUFFER) and draw 4 of them. 
-//        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-//        glDeleteBuffers(1, &vboId);
-//    }
-//
-//    // cleanup
-//    // Note: This is just good practice so that text-specific rendering functionality doesn't
-//    // get left in place and mess up other rendering.  This is not a risk in this demo, but it is
-//    // good practice anyway.
-//    glDisable(GL_BLEND);
-//    glBlendFunc(0, 0);
-//    glBindTexture(GL_TEXTURE_2D, 0);
-//    glBindBuffer(GL_ARRAY_BUFFER, 0);
-//    glDeleteTextures(1, &textureId);
-//
-//    // do NOT disable vertex attribute arrays when using VAOs
-//}
+class atlas
+{
+public:
+    // the FT_Face type is a pointer, so don't use a reference or pointer
+    atlas(const FT_Face face, const int height);
+
+    ~atlas();
+
+    void RenderChar(const char c, const float x, const float y, const float userScaleX, const float userScaleY);
+    //void RenderText(const float x, const float y, const float userScaleX, 
+    //    const float userScaleY);
+private:
+    // have to reference it on every draw call, so keep it around
+    GLuint _textureId;
+
+    // which sampler to use (0 - GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS (??you sure??)
+    GLint _textureSamplerId;
+
+    // the FreeType glyph set provides the basic printable ASCII character set, and even though 
+    // the first 31 are not visible and will therefore not be loaded, the useless bytes are an 
+    // acceptable tradeoff for rapid ASCII character lookup
+    struct FreeTypeGlyphCharInfo {
+        // advance X and Y for screen coordinate calculations
+        float ax;
+        float ay;
+
+        // bitmap left and top for screen coordinate calculations
+        float bl;
+        float bt;
+
+        // glyph bitmap width and height for screen coordinate calculations
+        float bw;
+        float bh;
+
+        // glyph bitmap width and height normalized to [0.0,1.0] for texture coordinate calculations
+        // Note: It is better for performance to do the normalization (a division) at startup.
+        float nbw;
+        float nbh;
+
+        // TODO: change to "texture S" and "texture T" to be clear
+        float tx;	// x offset of glyph in texture coordinates (S on range [0.0,1.0])
+        float ty;	// y offset of glyph in texture coordinates (T on range [0.0,1.0])
+    } _glyphCharInfo[128];   
+};
+
+atlas *gAtlasPtr;
+
+atlas::atlas(const FT_Face face, const int height)
+{
+    // clear out the character memory to all 0s (standard practice for arrays)
+    memset(_glyphCharInfo, 0, sizeof(_glyphCharInfo));
+
+    // set font height to 48 pixels
+    // Note: Setting the pixel width (middle argument) to 0 lets FreeType determine font width 
+    // based on the provided height.
+    // http://learnopengl.com/#!In-Practice/Text-Rendering
+    FT_Set_Pixel_Sizes(gFtFace, 0, height);
+
+    // save some dereferencing
+    FT_GlyphSlot glyph = gFtFace->glyph;
+
+    // before I begin...
+    // A texture atlas means that a bunch of different images are loaded into the same texture.  
+    // In many applications, such as games with sprites, the textures are all the same size, so 
+    // it is rather easy to make a perfect grid.  TrueType fonts are not so pretty for nice 
+    // grids, but when rendered properly they look very nice, so I'm willing to jump through 
+    // some hoops when loading them.  The characters in TrueType fonts are not the same size 
+    // because each character is designed individually and has its own dimensions.  To load 
+    // these into an atlas, I am going to run through all the characters and calculate how much 
+    // space will be required to load them side-by-side, but be aware that this row of 
+    // characters will be of uneven height (not all characters are the same height) and may run 
+    // up against the maximum byte width of a texture.  Then I'll allocate the bytes necessary 
+    // for a texture to hold all the character's glyphs, and finally I'll load them all 
+    // side-by-side in the same order as when I calculated the required texture size.
+    
+    // The GL standard defines a maximum size (in bytes) for textures.  This affects 1D and 2D 
+    // textures (I've been told that 3D textures have their own max values).  1D is just a line, 
+    // so it only applies to that one dimension.  For 2D textures, the max size applies to both 
+    // width and height.  This value is determined by the graphics API.  I checked this program
+    // (on 3-29-2016), and at this time OpenGL is telling me that my max texture size is 16384 
+    // bytes.  This means that I have 16384 bytes for width and 16384 bytes for height, and I 
+    // doubt that I am going to max out either with this FreeType library, although if font size (??font size -> bitmap size??)
+    // became enormous I might need to start a second row.  But while the GL standard does not 
+    // tell the graphics API an upper limit, it does tell them a lower limit for this max value, 
+    // which I believe is 1024 bytes.  That is, OpenGL is free to specify that a maximum texture 
+    // size is 16kb, or 32kb, or whatever, but the max texture size must not be below 1024 
+    // bytes, which should be sufficient to support rather old video or just incapable video 
+    // hardware.  A max size of 1024 bytes means that a 2D texture can 1024x1024 bytes, or 
+    // 1024x512 bytes, or 2x1024 (yes, 2 bytes), and it would be okay.  
+    
+    // for FreeType fonts under default rendering, 1 pixel == 1 byte
+    // Note: FreeType 2 (the header indicates that I am using 2.6.1 as of 3-29-2016) does not 
+    // provide RGB data for a texture, but it does provide monochrome (1-bit) or 8-bit greyscale 
+    // bitmaps.  
+    // http://www.freetype.org/freetype2/docs/ft2faq.html#general-donts
+    // Also Note: When loading a glyph, I use FT_LOAD_RENDER, which causes a character's glyph 
+    // to be loaded from the TrueType file into a small bitmap in the default render mode.  
+    // http://www.freetype.org/freetype2/docs/reference/ft2-base_interface.html#FT_LOAD_RENDER
+    // Also Also Note: The default render mode loads an 8-bit greyscale bitmap with 256 levels 
+    // of opacity (2^8) (implicitly, this means 256 levels of opacity per pixel).  "Use linear 
+    // alpha blending and gamma correction to correctly render non-monochrome glyph bitmaps onto 
+    // a surface." (alpha blending is activated in the "render text" method) This means that 
+    // there is one 8-bit byte per pixel.  Keep this in mind when calculating the texture size.  
+    // http://www.freetype.org/freetype2/docs/reference/ft2-base_interface.html#FT_Render_Mode
+
+    //DO THINGS WITH THIS
+    GLint max_texture_size;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);
+
+    // build up the dimensions for the atlas, then make a texture for it later
+    // Note: Not only are the dimensions needed before allocating space for the texture, but in 
+    // loading up these dimensions BEFORE creating the texture, I can make sure sure that all the
+    // characters load (that is, check that FT_Load_Char(...) does not return errors).
+    // Also Note: The row width builds additively with each glyph, but the row height is only the 
+    // height of the tallest glyph.
+    // Also Also Note:??mention max texture size??
+    //??why restrict to a max width? trying to mimic the actual bitmap layout??
+    unsigned int atlasPixelWidth = 0;
+    unsigned int atlasPixelHeight = 0;
+    unsigned int rowPixelWidth = 0;
+    unsigned int rowPixelHeight = 0;
+
+    // load only the visible characters of the basic ASCII set
+    // Note: The basic set is 2^7 = 128 items, and the first 32 are non-printable, so skip them.
+    for (size_t charCode = 32; charCode < 128; charCode++)
+    {
+        if (FT_Load_Char(face, charCode, FT_LOAD_RENDER))
+        {
+            fprintf(stderr, "Loading character '%c' failed\n", charCode);
+            continue;
+        }
+
+        // if this glyph would make this row's width exceed the max allowable texture size, 
+        // start a new row
+        // Note: Remember that FreeType provides an 8-bit alpha bitmap, so in this particular 
+        // application, each pixel is 1 byte and pixels and bytes can be compared.
+        // Also Also Note: The "+1" is a 1-pixel "gutter" between characters in case some kind 
+        // of float rounding at render time (specifically, calculating texture coordinates S and 
+        // T, each by definition on the range [0.0,1.0]) goes 1 pixel further than it should.  
+        // This 1-pixel "gutter" prevents that 1 pixel from infringing on the edges of another 
+        // glyph.
+        if ((rowPixelWidth + glyph->bitmap.width + 1) >= 1024)
+        {
+            // if this row is longer than any previous row, expand the atlas
+            // Note: Since this only happens if the next glyph will make the row exceed the max 
+            // allowable texture width, the difference between the two will probably only be a 
+            // handful of pixels, but these calculations need to be exact to look right.
+            atlasPixelWidth = std::max(atlasPixelWidth, rowPixelWidth);
+
+            // row height has already been calculated, so just add it
+            atlasPixelHeight += rowPixelHeight;
+
+            // reset row width and height before starting the new row
+            rowPixelWidth = 0;
+            rowPixelHeight = 0;
+        }
+
+        // expand the row's width by the width of this character's glyph + the 1-pixel "gutter"
+        rowPixelWidth += glyph->bitmap.width + 1;
+
+        // if the current glyph is taller than any other glyph in the row, accomodate it
+        // Note: Yes, this means that there will be wasted bytes, but unless I used some kind of 
+        // fancy closest-packing algorithm I am going to have wasted bytes.  But bytes are cheap 
+        // (for PCs, at least), so I'm willing to waste some bytes if it means that atlas 
+        // loading will be easier.
+        rowPixelHeight = std::max(rowPixelHeight, glyph->bitmap.rows);
+    }
+
+    // when the above loop exits, it will have adjusted the variables for row width and height, 
+    // but not for atlas width and height, so take care of the atlas width and height the same 
+    // way as it happens when a new row is created
+    atlasPixelWidth = std::max(atlasPixelWidth, rowPixelWidth);
+    atlasPixelHeight += rowPixelHeight;
+
+    // must have already created AND BOUND a program for this to work
+    glGenTextures(1, &_textureId);
+    glBindTexture(GL_TEXTURE_2D, _textureId);
+
+    // allocate space for the texture in GPU memory
+    // Note: This is why "atlas width" and "atlas height" had to be computed beforehand.
+
+    // some kind of detail thing; leave at default of 0
+    GLint level = 0;
+
+    // tell OpenGL that it should store the data as alpha values (no RGB)
+    // Note: That is, it should store [alpha, alpha, alpha, etc.].  If GL_RGBA (red, green, 
+    // blue, and alpha) were stated instead, then OpenGL would store the data as 
+    // [red, green, blue, alpha, red, green, blue, alpha, red, green, blue, alpha, etc.].
+    GLint internalFormat = GL_ALPHA;
+
+    // tell OpenGL that the data is being provided as alpha values
+    // Note: Similar to "internal format", but this is telling OpenGL how the data is being
+    // provided.  It is possible that many different image file formats store their RGBA 
+    // in many different formats, so "provided format" may differ from one file type to 
+    // another while "internal format" remains the same in order to provide consistency 
+    // after file loading.  In this case though, "internal format" and "provided format"
+    // are the same.
+    GLint providedFormat = GL_ALPHA;
+
+    // knowing the provided format is great and all, but OpenGL is getting the data in the 
+    // form of a void pointer, so it needs to be told if the data is a singed byte, unsigned 
+    // byte, unsigned integer, float, etc.
+    // Note: The shader uses values on the range [0.0, 1.0] for color and alpha values, but
+    // the FreeType face uses a single byte for each alpha value.  Why?  Because a single 
+    // unsigned byte (8 bits) can specify 2^8 = 256 (0 - 255) different values.  This is 
+    // good enough for what FreeType is trying to draw.  OpenGL compensates for the byte by
+    // dividing it by 256 to get it on the range [0.0, 1.0].  
+    // Also Note: Some file formats provide data as sets of floats, in which case this type
+    // would be GL_FLOAT.
+    GLenum providedFormatDataType = GL_UNSIGNED_BYTE;
+
+    // no border (??units? how does this work? play with it??)
+    GLint border = 0;
+
+    // the 0 (null (void *) pointer) at the end tells OpenGL that no data is provided for the 
+    // texture right now, so it should only allocate the required memory for now
+    glTexImage2D(GL_TEXTURE_2D, level, internalFormat, atlasPixelWidth, atlasPixelHeight,
+        border, providedFormat, providedFormatDataType, 0);
+
+    // tell the frag shader which texture sampler to use
+    // ??need to do this now or is it more appropriate to wait until render time??
+    glActiveTexture(GL_TEXTURE0);
+    _textureSamplerId = 0;
+    glUniform1i(gUniformTextSamplerLoc, _textureSamplerId);
+
+    // ??the heck is this??
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    // texture configuration setup (I don't understand most of these)
+    // - clamp both S and T (texture's X and Y; they have their own axis names) to edges so that 
+    // any texture coordinates that are provided to OpenGL won't be allowed beyond the [-1, +1] 
+    // range that texture coordinates are restricted to
+    // - linear filtering when the texture needs to be magnified or (I cringe at the term) 
+    // "minified" based on scaling
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+    // paste all glyph bitmaps into the texture, but when loading them, I need to keep track of 
+    // where they are
+    int offsetX = 0;
+    int offsetY = 0;
+    // hijack the "row pixel height" and re-use it for helping to calculate Y offset
+    for (size_t charCode = 32; charCode < 128; charCode++)
+    {
+        if (FT_Load_Char(face, charCode, FT_LOAD_RENDER))
+        {
+            fprintf(stderr, "Loading character '%c' failed\n", charCode);
+            continue;
+        }
+
+        // this is the same dea as the "atlas pixel width/height" condition when determining 
+        // atlas size, but now it deals with the byte offsets into the loaded texture
+        if ((offsetX + glyph->bitmap.width + 1) >= 1024)
+        {
+            // vertical offset jumps to next row
+            offsetY += rowPixelHeight;
+
+            // row height and horizontal offset reset to beginning of row
+            rowPixelHeight = 0;
+            offsetX = 0;
+        }
+
+        // send the glyph's bitmap to its own place in the atlas' texture
+        GLint level = 0;
+        GLint internalFormat = GL_ALPHA;
+        GLint providedFormat = GL_ALPHA;
+        GLenum providedFormatDataType = GL_UNSIGNED_BYTE;
+        GLint border = 0;
+        glTexSubImage2D(GL_TEXTURE_2D, level, offsetX, offsetY, glyph->bitmap.width,
+            glyph->bitmap.rows, providedFormat, providedFormatDataType, glyph->bitmap.buffer);
+
+        // save glyph info for render time
+
+        // because "advance" (pixel distance to jump before next character that makes the text 
+        // appear according to font design) is stored, for reasons only the FreeType creator 
+        // knows, in 1/64 pixels, and multiplying by 2^6 (64) will generate it in pixels
+        // Note: The Y advance is only used in fonts that are meant to be written vertically.
+        // The Y advance does NOT describe the distance between lines of text.  Nevertheless,
+        // for the sake of generic font handling, record the Y advance too.
+        _glyphCharInfo[charCode].ax = (float)(glyph->advance.x >> 6);
+        _glyphCharInfo[charCode].ay = (float)(glyph->advance.y >> 6);
+
+        // pixel distance from font origin (a formally defined bottom-left point for the font 
+        // designer) to the bitmap origin (because rectangles outside OpenGL, including the 
+        // bitmap standard, define the top left as the rectangle origin) - yay for different 
+        // standards mixing it up in the same program
+        _glyphCharInfo[charCode].bl = (float)(glyph->bitmap_left);
+        _glyphCharInfo[charCode].bt = (float)(glyph->bitmap_top);
+
+        // don't know how FreeType stores glyphs in the TrueType file format and I don't need to 
+        // since the "load char" function work, but I do need to know where the glyph's data is 
+        // in the atlas' texture
+        // Note: Remember that OpenGL defines texture origin as the bottom left of a rectangle.
+        // Also Note: Remember that a texture has its own pixel coordinate system S and T that
+        // interpolate along a texture from [S=0.0, T=0.0] to [S=1.0T=1.0].
+        _glyphCharInfo[charCode].tx = (float)(offsetX / (float)atlasPixelWidth);
+        _glyphCharInfo[charCode].ty = (float)(offsetY / (float)atlasPixelHeight);
+
+        // rectangles (including OpenGL textures) are defined by an origin (already recorded) 
+        // and width and height
+        // Note: The portion of the atlas texture for this character needs an origin and width and height, and since the origin is in texture coordinates, the width and height for this portion of the texture must also be in texture coordinates.
+        _glyphCharInfo[charCode].bw = (float)(glyph->bitmap.width);
+        _glyphCharInfo[charCode].nbw = (float)(glyph->bitmap.width / (float)atlasPixelWidth);
+        _glyphCharInfo[charCode].bh = (float)(glyph->bitmap.rows);
+        _glyphCharInfo[charCode].nbh = (float)(glyph->bitmap.rows / (float)atlasPixelHeight);
+
+        // just like in the earlier loop
+        rowPixelHeight = std::max(rowPixelHeight, glyph->bitmap.rows);
+        offsetX += glyph->bitmap.width + 1;
+    }
+}
+
+atlas::~atlas()
+{
+    glDeleteTextures(1, &_textureId);
+}
 
 // x and y are screen coordinates (each on the range [-1,+1])
-void RenderText(const float x, const float y, const float userScaleX, const float userScaleY)
+void atlas::RenderChar(const char c, const float x, const float y, const float userScaleX, const float userScaleY)
 {
     // the text will be drawn, in part, via a manipulation of pixel alpha values, and apparently
     // OpenGL's blending does this
@@ -485,8 +560,8 @@ void RenderText(const float x, const float y, const float userScaleX, const floa
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // bind the texture that contains the atlas and tell OpenGL 
-    glBindTexture(GL_TEXTURE_2D, gFreeTypeAtlasTextureId);
-    glUniform1i(gUniformTextSamplerLoc, gTextureSamplerId);
+    glBindTexture(GL_TEXTURE_2D, _textureId);
+    glUniform1i(gUniformTextSamplerLoc, _textureSamplerId);
 
     // set the 
     // 2 floats per screen coord, 2 floats per texture coord, so 1 variable will do
@@ -541,28 +616,28 @@ void RenderText(const float x, const float y, const float userScaleX, const floa
     // data, and that's it.  If I drew that texture at the user-provided x and y, then the 
     // character would likely look like it isn't centered.  The TrueType format provides info 
     // that FreeType extracts so that I can figure out where to draw the texture so that it 
-    // LOOKS like the glyph ('g', 'K', ';', etc.) "starts" at the user-provided x and y.
-    float scaledGlyphLeft = gGlyphCharInfo['K'].bl * oneOverScreenPixelWidth * userScaleX;
-    float scaledGlyphWidth = gGlyphCharInfo['K'].bw * oneOverScreenPixelWidth * userScaleX;
-    float scaledGlyphTop = gGlyphCharInfo['K'].bt * oneOverScreenPixelHeight * userScaleY;
-    float scaledGlyphHeight = gGlyphCharInfo['K'].bh * oneOverScreenPixelHeight * userScaleY;
+    // LOOKS like the glyph ('g', c, ';', etc.) "starts" at the user-provided x and y.
+    float scaledGlyphLeft = _glyphCharInfo[c].bl * oneOverScreenPixelWidth * userScaleX;
+    float scaledGlyphWidth = _glyphCharInfo[c].bw * oneOverScreenPixelWidth * userScaleX;
+    float scaledGlyphTop = _glyphCharInfo[c].bt * oneOverScreenPixelHeight * userScaleY;
+    float scaledGlyphHeight = _glyphCharInfo[c].bh * oneOverScreenPixelHeight * userScaleY;
 
     // could these be condensed into the "scaled glyph" calulations? yes, but this is clearer to 
     // me
     float screenCoordLeft = x - scaledGlyphLeft;
-    float screenCoordRight = scaledGlyphLeft + scaledGlyphWidth;
+    float screenCoordRight = screenCoordLeft + scaledGlyphWidth;
     float screenCoordTop = y + scaledGlyphTop;
-    float screenCoordBottom = scaledGlyphTop - scaledGlyphHeight;
+    float screenCoordBottom = screenCoordTop - scaledGlyphHeight;
 
     // unlike my project "freeglut_glload_render_freetype", which loads glyphs into their own 
     // textures one at a time (crude, but conveys basics), I can no longer use the whole texture 
     // and must use the offset info that was stored when the atlas was created
     // Note: Remember that textures use their own 2D coordinate system (S,T) to avoid confusion 
     // with screen coordinates (X,Y).
-    float sLeft = gGlyphCharInfo['K'].tx;//0.0f;
-    float sRight = gGlyphCharInfo['K'].tx + gGlyphCharInfo['K'].nbw;//1.0f;
-    float tBottom = gGlyphCharInfo['K'].ty;
-    float tTop = gGlyphCharInfo['K'].ty + gGlyphCharInfo['K'].nbh;
+    float sLeft = _glyphCharInfo[c].tx;//0.0f;
+    float sRight = _glyphCharInfo[c].tx + _glyphCharInfo[c].nbw;//1.0f;
+    float tBottom = _glyphCharInfo[c].ty;
+    float tTop = _glyphCharInfo[c].ty + _glyphCharInfo[c].nbh;
 
     // OpenGL draws triangles, but a rectangle needs to be drawn, so specify the four corners
     // of the box in such a way that GL_LINE_STRIP will draw the two triangle halves of the 
@@ -589,9 +664,14 @@ void RenderText(const float x, const float y, const float userScaleX, const floa
     glBufferData(GL_ARRAY_BUFFER, sizeof(box), box, GL_DYNAMIC_DRAW);
 
     // all that so that this one function call will work
-    // Note: Start at vertex 0 (that is, start at element 0 in the GL_ARRAY_BUFFER) and draw 4 
-    // of them. The "triangle strip" is how I draw a quad.
-    // TODO: use instancing and GL_TRIANGLES
+    // Note: Start at vertex 0 (that is, start at element 0 in the GL_ARRAY_BUFFER) and draw 
+    // 4 of them.
+    // Also Note: Due to the way that fonts work in texture atlases, only one character is 
+    // drawn at a time, which means that only 1 quad is drawn at a time.  Rather than set up 
+    // indexes and perform an element draw, just use a GL_TRIANGLE_STRIP.  That works great 
+    // for a single (and only a single) quad, hence the hard-coded vertex count (4) in the 
+    // draw call.  If it were not a quad, instancing and glDrawElements(...) should be used
+    // instead.
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
     // cleanup
@@ -628,21 +708,21 @@ void display()
     GLfloat color[4] = { 0.5f, 0.5f, 0, 1 };
     glUniform4fv(gUniformTextColorLoc, 1, color);
 
-    // set font size to 48 pixels (??"pixel width" to 0??)
-    FT_Set_Pixel_Sizes(gFtFace, 0, 48);
-
     // draw all the stuff that we want to, then swap the buffers
     // Note: Viable X and Y values are on the range [-1, +1].  No world->camera->clip->screen 
     // space conversions are performed here, so they must be specified in screen space. 
     // (??you sure? X = -1, Y = -1 doesn't draw??)
-    float X = 0;
-    float Y = 0;
-    RenderText(X, Y, 1.0f, 1.0f);
-    RenderText(X, Y, 2.0f, 2.0f);
-    RenderText(X, Y, 4.0f, 4.0f);
-    //RenderText('k', X, Y, 1.0f, 1.0f);
-    //RenderText('k', X, Y, 2.0f, 2.0f);
-    //RenderText('k', X, Y, 4.0f, 4.0f);
+    float X = -0.99f;
+    float Y = -0.99f;
+    gAtlasPtr->RenderChar('{', X, Y, 1.0f, 1.0f);
+
+    X = -0.5f;
+    Y = -0.5f;
+    gAtlasPtr->RenderChar('L', X, Y, 2.0f, 2.0f);
+
+    X = +0.5f;
+    Y = -0.23f;
+    gAtlasPtr->RenderChar('p', X, Y, 4.0f, 4.0f);
 
     // tell the GPU to swap out the displayed buffer with the one that was just rendered
     glutSwapBuffers();
@@ -738,209 +818,6 @@ void FreeResources()
     glDeleteProgram(gProgramId);
     glDeleteBuffers(1, &gVbo);
 }
-
-// TODO: header
-void InitFreeTypeAtlas()
-{
-    // clear out the character memory to all 0s (standard practice for arrays)
-    memset(gGlyphCharInfo, 0, sizeof(gGlyphCharInfo));
-
-    // set font height to 48 pixels
-    // Note: Setting the pixel width (middle argument) to 0 lets FreeType determine font width 
-    // based on the provided height.
-    // http://learnopengl.com/#!In-Practice/Text-Rendering
-    FT_Set_Pixel_Sizes(gFtFace, 0, 48);
-
-    // save some dereferencing
-    FT_GlyphSlot glyph = gFtFace->glyph;
-
-    // build up the dimensions for the atlas, then make a texture for it later
-    // Note: Not only are the dimensions needed before allocating space for the texture, but in 
-    //loading up these dimensions BEFORE creating the texture, I can make sure sure that all the 
-    // characters load.
-    // Note: The row width builds additively with each glyph, but the row height is only the 
-    // height of the tallest glyph.
-    //??why restrict to a max width? trying to mimic the actual bitmap layout??
-    unsigned int atlasPixelWidth = 0;
-    unsigned int atlasPixelHeight = 0;
-    if (FT_Load_Char(gFtFace, 'K', FT_LOAD_RENDER))
-    {
-        // FreeType returned an error
-    }
-    else
-    {
-        //atlasPixelWidth += glyph->bitmap.width + 1;   // ??why the +1??
-        atlasPixelWidth += glyph->bitmap.width;
-
-        // the glyph->bitmap structure has a "width" field, but no "height" field and instead 
-        // uses "rows" for height, which is a bit confusing but I have to work with it
-        //atlasPixelHeight = std::max(atlasPixelHeight, glyph->bitmap.rows);
-        atlasPixelHeight = std::max(atlasPixelHeight, glyph->bitmap.rows);
-    }
-
-    //if (FT_Load_Char(gFtFace, 'T', FT_LOAD_RENDER))
-    //{
-    //    // FreeType returned an error
-    //}
-    //else
-    //{
-    //    atlasPixelWidth += glyph->bitmap.width + 1;
-
-    //    // the glyph->bitmap structure has a "width" field, but no "height" field and instead 
-    //    // uses "rows" for height, which is a bit confusing but I have to work with it
-    //    atlasPixelHeight = std::max(atlasPixelHeight, glyph->bitmap.rows);
-    //}
-
-    // must have already created AND BOUND a program for this to work
-    glGenTextures(1, &gFreeTypeAtlasTextureId);
-    glBindTexture(GL_TEXTURE_2D, gFreeTypeAtlasTextureId);
-
-    // allocate space for the texture in GPU memory
-    // Note: This is why "atlas width" and "atlas height" had to be computed beforehand.
-
-    // some kind of detail thing; leave at default of 0
-    GLint level = 0;
-
-    // tell OpenGL that it should store the data as alpha values (no RGB)
-    // Note: That is, it should store [alpha, alpha, alpha, etc.].  If GL_RGBA (red, green, 
-    // blue, and alpha) were stated instead, then OpenGL would store the data as 
-    // [red, green, blue, alpha, red, green, blue, alpha, red, green, blue, alpha, etc.].
-    GLint internalFormat = GL_ALPHA;
-
-    // tell OpenGL that the data is being provided as alpha values
-    // Note: Similar to "internal format", but this is telling OpenGL how the data is being
-    // provided.  It is possible that many different image file formats store their RGBA 
-    // in many different formats, so "provided format" may differ from one file type to 
-    // another while "internal format" remains the same in order to provide consistency 
-    // after file loading.  In this case though, "internal format" and "provided format"
-    // are the same.
-    GLint providedFormat = GL_ALPHA;
-
-    // knowing the provided format is great and all, but OpenGL is getting the data in the 
-    // form of a void pointer, so it needs to be told if the data is a singed byte, unsigned 
-    // byte, unsigned integer, float, etc.
-    // Note: The shader uses values on the range [0.0, 1.0] for color and alpha values, but
-    // the FreeType face uses a single byte for each alpha value.  Why?  Because a single 
-    // unsigned byte (8 bits) can specify 2^8 = 256 (0 - 255) different values.  This is 
-    // good enough for what FreeType is trying to draw.  OpenGL compensates for the byte by
-    // dividing it by 256 to get it on the range [0.0, 1.0].  
-    // Also Note: Some file formats provide data as sets of floats, in which case this type
-    // would be GL_FLOAT.
-    GLenum providedFormatDataType = GL_UNSIGNED_BYTE;
-
-    // no border (??units? how does this work? play with it??)
-    GLint border = 0;
-
-    // the 0 (null (void *) pointer) at the end tells OpenGL that no data is provided for the 
-    // texture right now, so it should only allocate the required memory for now
-    glTexImage2D(GL_TEXTURE_2D, level, internalFormat, atlasPixelWidth, atlasPixelHeight, 
-        border, providedFormat, providedFormatDataType, 0);
-    
-    // tell the frag shader which texture sampler to use
-    // ??need to do this now or is it more appropriate to wait until render time??
-    glActiveTexture(GL_TEXTURE0);
-    gTextureSamplerId = 0;
-    glUniform1i(gUniformTextSamplerLoc, gTextureSamplerId);
-
-    // ??the heck is this??
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-    // texture configuration setup (I don't understand most of these)
-    // - clamp both S and T (texture's X and Y; they have their own axis names) to edges so that 
-    // any texture coordinates that are provided to OpenGL won't be allowed beyond the [-1, +1] 
-    // range that texture coordinates are restricted to
-    // - linear filtering when the texture needs to be magnified or (I cringe at the term) 
-    // "minified" based on scaling
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-
-    // paste all glyph bitmaps into the texture, but when loading them, I need to keep track of where they are
-    int offsetX = 0;
-    int offsetY = 0;
-    if (FT_Load_Char(gFtFace, 'K', FT_LOAD_RENDER))
-    {
-        // FreeType returned an error
-    }
-    else
-    {
-        // on first character load, the offset into the OpenGL texture that I allocated is 0
-        GLint level = 0;
-        GLint internalFormat = GL_ALPHA;
-        GLint providedFormat = GL_ALPHA;
-        GLenum providedFormatDataType = GL_UNSIGNED_BYTE;
-        GLint border = 0;
-        glTexSubImage2D(GL_TEXTURE_2D, level, offsetX, offsetY, glyph->bitmap.width, 
-            glyph->bitmap.rows, providedFormat, providedFormatDataType, glyph->bitmap.buffer);
-
-        // save glyph info for render time
-
-        // because "advance" (pixel distance to jump before next character that makes the text 
-        // appear according to font design) is stored, for reasons only the FreeType creator 
-        // knows, in 1/64 pixels, and multiplying by 2^6 (64) will generate it in pixels
-        // Note: The Y advance is only used in fonts that are meant to be written vertically.
-        // The Y advance does NOT describe the distance between lines of text.  Nevertheless,
-        // for the sake of generic font handling, record the Y advance too.
-        gGlyphCharInfo['K'].ax = (float)(glyph->advance.x >> 6);
-        gGlyphCharInfo['K'].ay = (float)(glyph->advance.y >> 6);
-
-        // pixel distance from font origin (a formally defined bottom-left point for the font 
-        // designer) to the bitmap origin (because rectangles outside OpenGL, including the 
-        // bitmap standard, define the top left as the rectangle origin) - yay for different 
-        // standards mixing it up in the same program
-        gGlyphCharInfo['K'].bl = (float)(glyph->bitmap_left);
-        gGlyphCharInfo['K'].bt = (float)(glyph->bitmap_top);
-
-        // don't know how FreeType stores glyphs in the TrueType file format and I don't need to 
-        // since the "load char" function work, but I do need to know where the glyph's data is 
-        // in the atlas' texture
-        // Note: Remember that OpenGL defines texture origin as the bottom left of a rectangle.
-        // Also Note: Remember that a texture has its own pixel coordinate system S and T that
-        // interpolate along a texture from [S=0.0, T=0.0] to [S=1.0T=1.0].
-        gGlyphCharInfo['K'].tx = (float)(offsetX / (float)atlasPixelWidth);
-        gGlyphCharInfo['K'].ty = (float)(offsetY / (float)atlasPixelHeight);
-
-        // rectangles (including OpenGL textures) are defined by an origin (already recorded) 
-        // and width and height
-        // Note: The portion of the atlas texture for this character needs an origin and width and height, and since the origin is in texture coordinates, the width and height for this portion of the texture must also be in texture coordinates.
-        gGlyphCharInfo['K'].bw = (float)(glyph->bitmap.width);
-        gGlyphCharInfo['K'].nbw = (float)(glyph->bitmap.width / (float)atlasPixelWidth);
-        gGlyphCharInfo['K'].bh = (float)(glyph->bitmap.rows);
-        gGlyphCharInfo['K'].nbh = (float)(glyph->bitmap.rows / (float)atlasPixelHeight);
-
-        offsetX += glyph->bitmap.width + 1;
-    }
-
-    //if (FT_Load_Char(gFtFace, 'T', FT_LOAD_RENDER))
-    //{
-    //    // FreeType returned an error
-    //}
-    //else
-    //{
-    //    GLint level = 0;
-    //    GLint internalFormat = GL_ALPHA;
-    //    GLint providedFormat = GL_ALPHA;
-    //    GLenum providedFormatDataType = GL_UNSIGNED_BYTE;
-    //    GLint border = 0;
-    //    glTexSubImage2D(GL_TEXTURE_2D, level, offsetX, offsetY, glyph->bitmap.width, 
-    //        glyph->bitmap.rows, providedFormat, providedFormatDataType, glyph->bitmap.buffer);
-
-    //    // save glyph info for render time
-    //    gGlyphCharInfo['T'].ax = (float)(glyph->advance.x >> 6);
-    //    gGlyphCharInfo['T'].ay = (float)(glyph->advance.y >> 6);
-    //    gGlyphCharInfo['T'].bl = (float)(glyph->bitmap_left);
-    //    gGlyphCharInfo['T'].bt = (float)(glyph->bitmap_top);
-    //    gGlyphCharInfo['T'].tx = (float)(offsetX / atlasPixelWidth);
-    //    gGlyphCharInfo['T'].ty = (float)(offsetY / atlasPixelHeight);
-    //    gGlyphCharInfo['T'].bw = (float)(glyph->bitmap.width);
-    //    gGlyphCharInfo['T'].bh = (float)(glyph->bitmap.rows);
-
-    //    offsetX += glyph->bitmap.width + 1;
-    //}
-
-}
-
 
 /*-----------------------------------------------------------------------------------------------
 Description:
@@ -1060,7 +937,7 @@ bool init(int argc, char *argv[])
     }
 
     // start up the font texture atlas now that the program is created and uniforms are recorded
-    InitFreeTypeAtlas();
+    gAtlasPtr = new atlas(gFtFace, 48);
 
     // create the vertex buffer that will be used to create quads as a base for the FreeType 
     // glyph textures
